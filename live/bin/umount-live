@@ -64,7 +64,7 @@ me=${0##*/}
 HIJACKED_INIT=/hijacked-init
  PROTECT_LIST="^(/sbin/mount.ntfs|mount.ntfs|mount.fuse|mount.cifs|ntfs-3g)$"
    TARDY_LIST="^(acpid)$"
-BOOT_DEV_FILE=/live/bin/boot-device
+BOOT_DEV_FILE=/live/config/boot-device
 
       V_LEVEL=6
  BREAK_POINTS=0
