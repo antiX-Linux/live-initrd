@@ -2,3 +2,5 @@
 .*.swp
 init.conf
 live/lib/modules
+init
+xlat
