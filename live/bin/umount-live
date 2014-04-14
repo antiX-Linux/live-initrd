@@ -583,7 +583,7 @@ shutdown_or_reboot() {
         wait_for_user
 
     elif [ -n "$DO_PROMPT" ]; then
-        printf "======== ${cyan}Press$magenta ENTER$cyan key to $command ========"
+        printf "${cyan}======== Press$magenta ENTER$cyan key to $command ========"
         read x </dev/console
     fi
 
