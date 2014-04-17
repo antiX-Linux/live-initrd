@@ -1,6 +1,6 @@
 #!/live/bin/sh
 
-for alias in $(find /sys/devices -name modalias | xargs cat 2>/dev/null | sort -u); do
+for alias in $(find /sys/devices -name modalias -print0 | xargs -0 cat 2>/dev/null | sort -u); do
     /live/bin/modprobe -q $alias &>/dev/null
 done
 
