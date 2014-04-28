@@ -4,6 +4,9 @@
 
 old_stty=$(stty -g)
 
+: ${WIDTH:=$(stty size | cut -d" " -f2)}
+: ${HEIGHT:=$(stty size | cut -d" " -f1)}
+
 restore_tty() {
     stty $old_stty
     printf "\e[?25h\e[0m"
@@ -16,11 +19,13 @@ Usage: ${0##*/} [options]
 Options:
     -a  --accel    Speed increase when aliens descend in percent: (${accel})
     -c  --cols     Number of columns of aliens: (${cols})
+    -C  -classic   Use classic (boring) spacing
     -d  --debug  
     -e  --elev     Space between aliens and top of play area: (${elev})
     -g  --gap      Startng gap between aliens and ship: (${gap})
     -h  --help
     -i  --idle     Starting clock cycles per alien motion: (${idle_base})
+    -m  --margin   Extra space on left of screen 
     -r  --rows     Number of rows of aliens: (${rows})
     -s  --space    Space between aliens: (${space})
     -t  --tick     Clock period in microseconds: (${tick})
@@ -32,7 +37,7 @@ CLI_Help
 space_evaders() {
     local accel_factor=$((100 - accel))
     local alien_y=$((elev  +  2))
-    local cycles_per_step=$(((idle_base * idle_factor) / idle_denom))
+    local cycles_per_step=$(( (idle_base * idle_factor) / idle_denom))
     local delay=$(printf "0.%06d" $tick)
     echo "cycles_per_step:$cycles_per_step  delay:$delay" >&2
 
@@ -45,9 +50,11 @@ space_evaders() {
     local alien_height=$((2 * rows))
 
     local  ship_max_x=$((width  -  ship_width - 1))
+    local  ship_min_x=$(( margin ))
     local alien_max_x=$((width  - alien_width - 1)) 
-    local      ship_x=$(((width - ship_width) / 2))
-    local     alien_x=$(((width - alien_width) / 2 - 1))
+    local alien_min_x=$(( margin + 2 )) 
+    local      ship_x=$(( margin + (width - ship_width) / 2))
+    local     alien_x=$(( margin + (width - alien_width) / 2 - 1))
 
     local ship_y=$((alien_y + alien_height - 1 + $gap))
 
@@ -66,7 +73,7 @@ space_evaders() {
     local clear="$e[2;J" cursor_off="$e[?25l" cursor_on="$e[?25h"
 
     local title=" S P A C E   E \\/ A D E R S "
-    local title="$e[1;$(( 1 + (width - ${#title}) /2))H$e[0;0;37m$title$nc"
+    local title="$e[1;$(( 1 + (WIDTH - ${#title}) /2))H$e[0;0;37m$title$nc"
 
     local val_6=1 val_5=5 val_4=10 val_3=15 val_2=20 val_1=30
 
@@ -118,9 +125,9 @@ space_evaders() {
         [ "$key" ] || key=$($getch)
         case $key in
                 
-         q|Q)  sign_off "Bye Bye!" 0 ;;
+         q|Q)  sign_off "Bye Bye!" 0;;
 
-         d|D)  duck_mode=$(((duck_mode +1) % alien_chars));;
+         d|D)  duck_mode=$(( (duck_mode + 1) % 4));;
 
          s|S)  printf "$e[$ship_y;1H$e[3B"
                 restore_tty
@@ -129,41 +136,41 @@ space_evaders() {
                 refresh;;
 
          f|F)  if [ $cycles_per_step -gt 0 -a -n "$debug" ]; then
-                    idle_factor=$(((idle_factor * 90) / 100))
-                    cycles_per_step=$(((idle_base * idle_factor) /idle_denom))
+                    idle_factor=$(( (idle_factor * 90) / 100))
+                    cycles_per_step=$(( (idle_base * idle_factor) /idle_denom))
                     echo "cycles_per_step=$cycles_per_step" >&2
                 fi;;
 
          g|G)  if [ $cycles_per_step -lt 150 -a -n "$debug" ]; then
-                    idle_factor=$(((idle_factor * 100) / 90))
-                    cycles_per_step=$(((idle_base * idle_factor) / idle_denom))
+                    idle_factor=$(( (idle_factor * 100) / 90))
+                    cycles_per_step=$(( (idle_base * idle_factor) / idle_denom))
                 fi;;
 
-           \ )  if [ $shot_y -eq 0 ]; then
+         " ")  if [ $shot_y -eq 0 ]; then
                     shot_x=$((ship_x + 4))
                     shot_y=$((ship_y))
                     draw_ship
                 fi;;
 
          p|P)  pause
-                continue;;        # Continue allows us to process key used to
-                                  # stop pausing
+               continue;;        # Continue allows us to process key used to
+                                 # stop pausing
          h|H)  help
-                continue;;        # Same here.  Remove if it is too confusing
+               continue;;        # Same here.  Remove if it is too confusing
 
 
            # Arrow keys: up, down, left, right
            ?A)  if [ $tick -gt 100 ]; then
-                    tick=$((( tick * 90) / 100))
+                    tick=$(( ( tick * 90) / 100))
                     delay=$(printf "0.%06d" $tick)
                 fi;;
 
            ?B)  if [ $tick -lt 50000 ]; then
-                    tick=$((( tick * 100) / 90))
+                    tick=$(( ( tick * 100) / 90))
                     delay=$(printf "0.%06d" $tick)
                 fi;;
 
-           ?D)  if [ $ship_x -gt 1 ]; then
+           ?D)  if [ $ship_x -gt $ship_min_x ]; then
                     ship_x=$((ship_x - 1))
                     draw_ship
                 fi;;
@@ -186,7 +193,7 @@ space_evaders() {
                 total_cycles=$((total_cycles + cycles))
                 cycles=0
 
-                dmod=$(((cycles_per_step - 2) / rows))
+                dmod=$(( (cycles_per_step - 2) / rows))
                 if [ $dmod -lt 1 ]; then
                     state=draw-2
                 else
@@ -210,7 +217,7 @@ space_evaders() {
                 [ $cycles_per_step -lt 2 ] && continue;;
 
          shot)  draw_shot
-                [ $((alien_y + alien_height - 1)) -gt $ship_y ] && sign_off "YOU LOST!"
+                [ $((alien_y + alien_height - 1)) -gt $ship_y ] && sign_off "GAME OVER!"
 
                 [ "$debug" ] && printf "$e[$ship_y;1H$e[2B$amber" && report
 
@@ -255,12 +262,12 @@ update_aliens() {
     alien_x=$((alien_x + alien_dir))
 
     # On far-left just change direction
-    [ $alien_x -le 2 ] || [ $alien_x -ge $alien_max_x ] || return
+    [ $alien_x -le $alien_min_x ] || [ $alien_x -ge $alien_max_x ] || return
 
     # reverse direction
     alien_dir=$((-1 * alien_dir))
 
-    [ $alien_x -le 2 ] && return
+    [ $alien_x -le $alien_min_x ] && return
 
     [ $duck_mode -eq 3 ] && return
 
@@ -269,8 +276,8 @@ update_aliens() {
 
     alien_y=$((alien_y + 1))
 
-    idle_factor=$(((idle_factor * accel_factor) / 100))
-    cycles_per_step=$(((idle_base * idle_factor) / idle_denom))
+    idle_factor=$(( (idle_factor * accel_factor) / 100))
+    cycles_per_step=$(( (idle_base * idle_factor) / idle_denom))
     echo "cycles_per_step=$cycles_per_step" >&2
 }
 
@@ -445,7 +452,7 @@ draw_ship() {
     echo -en "$e[$ship_y;${ship_x}H$nc $cyan($green--$shot$green--$cyan) "
 
     # Show boundaries every time so edges of ship don't erase them
-    printf "$e[$ship_y;1H$white|"
+    printf "$e[$ship_y;${ship_min_x}H$white|"
     printf "$e[$ship_y;${ship_max_x}H$e[8C$white|"
 }
 
@@ -481,8 +488,9 @@ help() {
     clear
 
     printf "$title"
-
-    sed "s/^/\t\t/" <<Help
+    local marg=$(( (WIDTH - 48 ) / 2 ))
+    local space="$(printf "%${marg}s" "")"
+    sed "s/^/$space/" <<Help
 $e[3;1H$cyan
            left-arrow: move left
           right-arrow: move right
@@ -502,6 +510,7 @@ Help
 
     printf "$amber$e[2B"
     report
+    printf "screen width: $WIDTH   screen height: $HEIGHT"
     printf "$amber\n"
     utilization
     pause
@@ -509,17 +518,17 @@ Help
 }
 
 report() {
-    local elapsed=$(($(date +%s) - start_time))
+    local elapsed=$(( $(date +%s) - start_time))
     test $elapsed -gt 0 || return
     printf "tick:0.%06d dmod:%-2d total_cycles:%-3s cycles/step:%-4s cycles/sec:%-4d secs:%d" \
         $tick ${dmod:-0} $total_cycles $cycles_per_step $((total_cycles /elapsed)) $elapsed
 }
 
 utilization() {
-    local elapsed=$(($(date +%s) - start_time))
+    local elapsed=$( ($(date +%s) - start_time))
     test $elapsed -gt 0 || return
     cps=$((total_cycles / elapsed))
-    util=$(((1000000 / tick  - cps) / (10000 / tick)))
+    util=$(( (1000000 / tick  - cps) / (10000 / tick)))
     echo "cycles/sec:$cps  cpu-utilization:$util%"
     return 0
 }
@@ -530,7 +539,7 @@ sign_off() {
     echo        >&2
     utilization >&2
 
-    local x_off=$(((width - 20) / 2))
+    local x_off=$(( (WIDTH - 20) / 2))
     printf "$e[9;${x_off}H                      "$cyan
     printf "$e[10;${x_off}H  ==================  "
     printf "$e[11;${x_off}H  X                X  "
@@ -545,22 +554,36 @@ sign_off() {
     printf "$e[$ship_y;1H$e[3B$nc"
     printf "$e[$ship_y;1H$e[3B$nc"
 
-    [ "$debug" ] || exit
+    pause 10
+    if [ -z "$debug" ]; then
+        clear
+        exit
+    fi
     printf "$amber"
     utilization
+    pause
     exit
 
+}
+
+auto_size() {
+    width=$(( 80 + (WIDTH - 80 ) / 2 ))
+    [ $width -gt $WIDTH ] && width=$WIDTH
+    margin=$(( (WIDTH - width) / 2))
+    center=$(( margin + width / 2))
 }
 
 start_space_evaders() {
 
     # Timing ...
-    local tick=10000 idle_base=20 accel=15
+    local tick=5000 idle_base=20 accel=15
     local duck_mode=0
     local idle_denom=1000 idle_factor=1000
-    local width=80 cols=8 rows=6 space=1
+    local width=80 cols=8 rows=6 space=1 center=40
+    local margin=0
     local ship_width=7 gap=4  elev=2
 
+    auto_size
     #-- Process command line.  Args must start with a "-"
     while [ $# -gt 0 -a -z "${1##-*}" ]; do
         arg="${1#-}"; shift
@@ -568,7 +591,7 @@ start_space_evaders() {
         # Stack short options
         case "$arg" in
             [a-z][a-z0-9]*)
-                if echo "$arg" | grep -q "^[acdeghirstw0-9]\+$"; then
+                if echo "$arg" | grep -q "^[acCdeghimrstw0-9]\+$"; then
                     set -- $(echo $arg | sed 's/\(\d\+\)/ \1 /g' | sed 's/\([a-zA-Z]\)/ -\1 /g') "$@"
                     continue
                 fi;;
@@ -597,11 +620,13 @@ start_space_evaders() {
         case "$arg" in
            -accel|a)  accel=$1         ; shift     ;;
             -cols|c)  cols=$1          ; shift     ;;
+         -classic|C)  classic=true                 ;;
            -debug|d)  debug=true                   ;;
             -elev|e)  elev=$1          ; shift     ;;
              -gap|g)  gap=$1           ; shift     ;;
             -help|h)  cli_help         ; return  0 ;;
             -idle|i)  idle_base=$1     ; shift     ;;
+          -margin|m)  margin=$1        ; shift     ;;
             -rows|r)  rows=$1          ; shift     ;;
            -space|s)  space=$1         ; shift     ;;
             -tick|t)  tick=$1          ; shift     ;;
@@ -614,7 +639,7 @@ start_space_evaders() {
 
     # We need the getch helper for non-blocking stdin
     local getch=
-    for try_getch in $GETCH ./getch getch ./getch-64 getch-64; do
+    for try_getch in $getch ./getch getch ./getch-64 getch-64; do
         [ -n "$($try_getch 2>&1)" ] && continue
         getch=$try_getch
         break
