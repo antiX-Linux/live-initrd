@@ -64,7 +64,7 @@ me=${0##*/}
 HIJACKED_INIT=/hijacked-init
  PROTECT_LIST="^(/sbin/mount.ntfs|mount.ntfs|mount.fuse|mount.cifs|ntfs-3g)$"
    TARDY_LIST="^(acpid)$"
-BOOT_DEV_FILE=/live/config/boot-device
+BOOT_DEV_FILE=/config/boot-device
 
       V_LEVEL=6
  BREAK_POINTS=0
@@ -86,8 +86,9 @@ main() {
     local NO_CO HI_CO LO_CO ME VERBOSE_MODE SHOW ERROR_CNT=0
 
     case $1 in
-     --umountfs) do_umountfs;;
-     --sendsigs) do_sendsigs;;
+     --sendsigs) do_sendsigs   ;;
+     --umountfs) do_umountfs   ;;
+ --final-umount) final_umount  ;;
               *) err "Expected --umountfs or --sendsigs"
     esac
 }
@@ -141,6 +142,7 @@ do_init() {
     export PATH
 
     touch $HIJACKED_INIT
+
     while true; do sleep 100; done
 }
 
@@ -211,23 +213,34 @@ do_umountfs() {
     done
 
     breakpoint 2 "After pivot"
+   
+    exec /bin/umount-live --final-umount
+    final_umount
+}
 
-    find_mounted_media
+final_umount() {
+
+    read_cmdline
+    set_color
+
+    breakpoint 3 "Start final umount"
+
+    find_mounted_cd $BOOT_DEV_FILE 
 
     vmsg 5 "$ME Kill most remaining processes"
     kill_procs_fast
 
-    breakpoint 3 "After killing processes"
+    breakpoint 4 "After killing processes"
 
     vmsg 5 "$ME Unmount most filesystems"
     umount_most
 
-    breakpoint 4 "After unmounting most filesystems"
+    breakpoint 5 "After unmounting most filesystems"
 
     vmsg 5 "$ME Disable swap"
     swapoff -a
 
-    breakpoint 5 "After disabling swap"
+    breakpoint 6 "After disabling swap"
 
     shutdown_or_reboot $runlevel
 }
@@ -305,7 +318,7 @@ do_sendsigs() {
     vmsg 4 "$nc done"
 
     if [ -n "$all_dead" ]; then
-        pmsg $((($try +1)/ 2)) "All processes ended within$white %n$nc second%s."
+        pmsg $(( ($try +1)/ 2)) "All processes ended within$white %n$nc second%s."
         return
     fi
 
@@ -471,8 +484,16 @@ kill_procs_fast() {
 mountpoint_list() {
     local ret=1
     while read dev mp type opts other; do
+
+        case $type in 
+            tmpfs) case $mp in
+                        /aufs*)     ;;
+                        *) continue ;;
+                    esac ;;
+        esac
+
         case $mp in
-            /|/dev|/dev/*|/proc|/sys) continue;;
+            /|/dev|/dev/*|/proc|/sys|/run*) continue;;
         esac
         ret=0
         echo -n "$mp "
@@ -521,42 +542,48 @@ umount_most() {
 }
 
 #------------------------------------------------------------------------------
-# Function: find_mounted_media
+# Function: find_mounted_cd <file>
 #
-# Look for a mounted devices of the form /dev/srN or /dev/srNN.  If found
-# set TO_EJECT to the first such device found.
+# Read boot device from <file>.  If it is a cdrom device and if it is still
+# mounted then set TO_EJECT to the name of the device for ejection after
+# all devices have been unumounted.
 #------------------------------------------------------------------------------
-find_mounted_media() {
+find_mounted_cd() {
 
     [ -n "$NO_PROMPT" ] && return
 
-    local boot_dev
+    local dev file=$1
 
-    [ -r $BOOT_DEV_FILE ] && boot_dev=$(cat $BOOT_DEV_FILE)
-    vmsg 6 "boot_dev:$white $boot_dev"
+    dev=$(cat $file 2>/dev/null)
 
-    for dev in $(cut -d" " -f1 /proc/mounts); do
-        case $dev in
-            /dev/sr[0-9]|/dev/sr[0-9][0-9]) ;;
-            *) continue ;;
-        esac
+    vmsg 6 "boot_dev:$white $dev"
+ 
+    [ -n "$dev" ] || return
 
-        if [ "$boot_dev" ]; then
-            [ "$dev" = "$boot_dev" ] && TO_EJECT="$dev $TO_EJECT"
-        else
-            TO_EJECT="$dev $TO_EJECT"
-        fi
-    done
+    # Make sure it is cdrom not a usb or hd drive
+    case $(stat -c %t $dev) in
+        b) ;;
+        *) return ;;
+    esac
+
+    # Make sure it is still mounted
+    grep -q "^$dev " /proc/mounts || return
+
+    TO_EJECT=$dev
+    vmsg 7 "to_eject:$white $TO_EJECT"
 }
 
-eject_all() {
-    local dev args
-    [ $V_LEVEL -ge 8 ] && args=-v
+#------------------------------------------------------------------------------
+# Function: eject_cd <device>
+#
+# Eject <device> with variable levels of verboseness
+#------------------------------------------------------------------------------
+eject_cd() {
+    local dev=$1 verbose
+    [ $V_LEVEL -ge 8 ] && verbose=-v
 
-    for dev; do
-        vmsg 7 "eject$white $dev"
-        eject-orig $args $dev
-    done
+    vmsg 7 "eject$white $dev"
+    eject-orig -p $verbose $dev
 }
 
 #------------------------------------------------------------------------------
@@ -579,7 +606,7 @@ shutdown_or_reboot() {
 
     if [ -n "$TO_EJECT" ]; then
         read_xlat ejectcd $LANG
-        eject_all $TO_EJECT
+        eject_cd $TO_EJECT
         wait_for_user
 
     elif [ -n "$DO_PROMPT" ]; then
@@ -654,8 +681,8 @@ breakpoint() {
         *,$1,*) ;;
          *,A,*) ;;
          *,a,*) case $1 in
-                    [e234])        ;;
-                         *) return ;;
+                    [e12345])       ;;
+                          *) return ;;
                 esac ;;
              *) return ;;
     esac
